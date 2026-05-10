@@ -113,6 +113,16 @@
             ''
               wrapProgram "$out/bin/gpumd" ${wrapperArgs}
               wrapProgram "$out/bin/nep" ${wrapperArgs}
+            '' + pkgs.lib.optionalString (!pkgs.stdenv.hostPlatform.isNixOS) ''
+              # libcuda.so lives in a system path the Nix glibc's ld.so.cache
+              # doesn't search. Add it to RPATH so the CUDA runtime can dlopen
+              # the driver without shadowing the Nix glibc via LD_LIBRARY_PATH.
+              for bin in "$out/bin/.gpumd-wrapped" "$out/bin/.nep-wrapped"; do
+                [ -f "$bin" ] || continue
+                for dir in /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/lib; do
+                  [ -f "$dir/libcuda.so.1" ] && patchelf --add-rpath "$dir" "$bin"
+                done
+              done
             '';
 
         };
