@@ -21,17 +21,43 @@
           overlays = [
             (final: prev: {
               # Target the specific CUDA set you are using
-              cudaPackages_12_9 = prev.cudaPackages_12_9.overrideScope (cfinal: cprev: {
-                # Override the cudnn attribute within that scope
-                cudnn = cprev.cudnn.overrideAttrs (oldAttrs: rec{
-                  version = "9.11.1.4"; # Your desired version
-                  src = prev.fetchurl {
-                    # You must provide the URL and hash for the specific version
-                    url = "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-${version}_cuda12-archive.tar.xz";
-                    hash = "sha256-YJrEikSORTMoek18YgVr8TD66MOx6yohgIDingAm7Bg=";
+              cudaPackages_12_9 = prev.cudaPackages_12_9.overrideScope (cFinal: cPrev:
+                let
+                  # 1. Define your list of packages to make parallel
+                  # (Added cudnn here so it gets the flag too)
+                  parallelPkgs = [
+                    "cuda_nvcc"
+                    "cuda_cudart"
+                    "libcufft"
+                    "libcurand"
+                    "libcublas"
+                    "libcublasmp"
+                    "libcusolver"
+                    "libcusolvermp"
+                    "cudnn"
+                  ];
+
+                  # 2. Define the specific logic for cuDNN (version + src)
+                  overriddenCudnn = cPrev.cudnn.overrideAttrs (old: rec {
+                    version = "9.11.1.4";
+                    src = prev.fetchurl {
+                      url = "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-${version}_cuda12-archive.tar.xz";
+                      hash = "sha256-YJrEikSORTMoek18YgVr8TD66MOx6yohgIDingAm7Bg=";
+                    };
+                  });
+
+                  # 3. Create the attribute set of parallel-enabled packages
+                  # Note: This uses 'cFinal' for cudnn to ensure the version change is picked up
+                  makeParallel = name: {
+                    inherit name;
+                    value = (if name == "cudnn" then overriddenCudnn else cPrev.${name}).overrideAttrs (_: { enableParallelBuilding = true; });
                   };
-                });
-              });
+                in
+                cPrev // (builtins.listToAttrs (map makeParallel parallelPkgs))
+              );
+              mpi = prev.mpi.overrideAttrs {
+                enableParallelBuilding = true;
+              };
             })
           ];
 
